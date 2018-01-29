@@ -1,0 +1,65 @@
+.MODEL Small,Pascal
+.486
+.STACK 100h
+
+INCLUDELIB	Modules.lib
+
+EnterDWord	PROTO	:DWORD, :DWORD
+DWordToFile	PROTO	:DWORD, :DWORD
+
+.DATA
+
+Welcome		DB	'Please enter a signed hex number: $'
+NumOK		DB	13,10,'Number is OK!',13,10,'$'
+NumWrong	DB	13,10,'Number is wrong!',13,10,'$'
+FileName	DB	'DWtoFile.txt',0
+FileOK		DB	'Saved to file!',13,10,'$'
+FileError	DB	'File write error!',13,10,'$'
+Buffer		DB	21,?
+String		DB	21 dup (?)
+Number		DD	?
+
+.CODE
+
+Start:
+
+		mov	ax,@DATA
+		mov	ds,ax			; DS = сегмент данных
+
+		; Ввод и преобразование числа
+		mov	ah,9
+		mov	dx,offset Welcome
+		int	21h			; вывод приглашения на ввод числа
+
+		push	offset Number		; заносим в стек адрес буфера для числа
+		push	0Eh			; заносим в стек цвет (жёлтый)
+		call	EnterDWord		; вызываем процедуру чтения и преобразования числа
+		test	ax,ax			; проверяем результат
+		jnz	@@numwrong		; прыгаем, если AX <> 0 (т.е. при ошибке)
+
+		mov	ah,9
+		mov	dx,offset NumOK		; сообщение, что всё хорошо
+		int	21h			; выводим сообщение
+
+		; Вывод результата в файл
+		push	offset Number		; заносим в стек адрес числа
+		push	offset FileName		; заносим в стек адрес имени файла
+		call	DWordToFile
+		test	ax,ax			; проверяем результат
+
+		mov	dx,offset FileError	; готовим заранее сообщение об ошибке записи в файл
+		jnz	@@finalmessage		; прыгаем, если AX <> 0 (т.е. при ошибке)
+
+		mov	dx,offset FileOK	; сообщение, что всё хорошо
+		jmp	@@finalmessage
+
+	@@numwrong:
+		mov	dx,offset NumWrong	; сообщение об ошибке
+	@@finalmessage:
+		mov	ah,9
+		int	21h			; выводим сообщение
+
+		mov	ax,4C00h
+		int	21h			; выход из программы
+
+END		Start
