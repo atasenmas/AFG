@@ -1,0 +1,179 @@
+.model small
+.386
+.stack 100h
+
+.data
+
+Count		=	15		; кол-во чисел
+
+TableTop	db	218,7 dup (196),' source ',7 dup (196),194,8 dup (196),' dest ',8 dup (196),191,13,10,'$'
+TableLeft	db	179,' $'
+TableMiddle	db	' ',179,' $'
+TableRight	db	' ',179,13,10,'$'
+TableBottom	db	192,22 dup (196),193,22 dup (196),217,13,10,'$'
+
+source		dd	(Count*20+31)/32 dup (?)	; буфер для исходных чисел
+dest		dd	(Count*20+31)/32 dup (?)	; буфер для результата
+
+.code
+
+; Записать в массив array в позицию idx (начиная с 0) число из регистра EAX
+; Меняет значения EAX и EDX
+Write20		macro	array:req, idx:rest
+	local	pos, byte1, bits	; локальные переменные
+		pos = idx*20		; позиция в битах
+		byte1 = pos/8		; номер первого байта (с младшими битами)
+		bits = pos mod 8	; кол-во лишних бит в младшем байте
+
+		and	eax,1 shl 20-1	; оставляем у EAX только 20 бит
+	if	bits			; если в младшем байте < 8 бит (bits <> 0), то...
+		shl	eax,bits	; сдвигаем eax на (8-bits) бит влево
+	endif
+		mov	edx,array[byte1]	; читаем 4 байта из массива
+		and	edx,not ((1 shl 20-1) shl bits)	; удаляем в edx 20 бит в нужной нам позиции
+		or	eax,edx		; объединяем оба числа
+		mov	array[byte1],eax	; записываем результат в массив
+endm
+
+; Прочитать из массива array в позиции idx (начиная с 0) число в регистр EAX
+; Меняет значение EDX
+Read20		macro	array:req, idx:rest
+	local	pos, byte1, bits	; локальные переменные
+		pos = idx*20		; позиция в битах
+		byte1 = pos/8		; номер первого байта (с младшими битами)
+		bits = pos mod 8	; кол-во лишних бит в младшем байте
+
+		mov	eax,array[byte1]	; читаем 4 байта из массива
+	if	bits			; если в младшем байте < 8 бит (bits <> 0), то...
+		shr	eax,bits	; сдвигаем eax на bits бит вправо
+	endif
+		shrd	edx,eax,4	; сохраняем младшие 4 бита в EDX (в старших битах)
+		shr	eax,4		; сдвигаем EAX на 4 бита вправо
+		cwde			; заполняем старшие 16 бит знаковыми битами
+		shld	eax,edx,4	; сдвигаем EAX обратно на 4 бита влево, восстанавливая младшие биты из EDX
+endm
+
+Start:
+
+		mov	ax,@data
+		mov	ds,ax
+		mov	es,ax
+
+		; Запись чисел
+		mov	eax,123456
+		Write20 source, 0	; записываем первое число (т.к. нумерация указывается от 0) в исходный массив
+		mov	eax,-32
+		Write20 source, 1	; записываем второе число и т.д.
+		mov	eax,90807
+		Write20 source, 2
+		mov	eax,354321
+		Write20 source, 3
+		mov	eax,-90807
+		Write20 source, 4
+		mov	eax,-1234
+		Write20 source, 5
+		mov	eax,169905
+		Write20 source, 6
+		mov	eax,-169905
+		Write20 source, 7
+		mov	eax,63443
+		Write20 source, 8
+		mov	eax,-63443
+		Write20 source, 9
+		mov	eax,-527
+		Write20 source, 10
+		mov	eax,1000
+		Write20 source, 11
+		mov	eax,475863
+		Write20 source, 12
+		mov	eax,0
+		Write20 source, 13
+		mov	eax,-68002
+		Write20 source, 14
+
+comment \
+		; Копирование массива source в dest
+		cld			; прямой порядок копирования
+		lea	si,source	; исходный массив
+		lea	di,dest		; результирующий массив
+		mov	cx,(Count*20+31)/32	; кол-во символов
+		rep movsd		; копирование
+\
+
+		; Преобразование массива (копирование в текущий элемент младших 10 битов из следующего элемента)
+		N = 0			; N = номер числа, 0 - это первое число (т.к. нумерация указывается от 0)
+	rept	Count			; повторяем цикл Count раз
+		Read20	source, N	; читаем число в позиции N из исходного массива
+		and	eax,not (1 shl 10-1)	; оставляем только старшие 10 бит
+		mov	ecx,eax		; сохраняем значение в ECX
+		Read20	source, (N+1) mod Count	; читаем число в позиции N+1 из исходного массива (если N+1 = Count, то читаем из позиции 0)
+		and	eax,(1 shl 10-1)	; оставляем только младшие 10 бит
+		or	eax,ecx		; объединяем EAX с ECX
+		Write20	dest, N		; записываем результат в позицию N результирующего массива
+		N = N + 1		; увеличиваем индекс N на 1
+	endm
+
+		; Вывод на экран
+		mov	ah,9		; функция вывода сообщения на экран (до '$')
+		lea	dx,TableTop	; адрес верхней части таблицы
+		int	21h		; выводим
+
+		N = 0			; первоначальный индекс массивов (номер чисел)
+	rept	Count			; повторяем цикл Count раз
+		Read20	dest, N		; EAX = число из результирующего массива
+		mov	ecx,eax		; записываем его в ECX
+		Read20	source, N	; EAX = число из исходного массива
+		call	ShowTwoNumbers	; выводим числа на экран (EAX - из исходного массива, ECX - из результирующего)
+		N = N + 1		; увеличиваем индекс
+	endm
+
+		mov	ah,9		; функция вывода сообщения на экран (до '$')
+		lea	dx,TableBottom	; адрес нижней части таблицы
+		int	21h		; выводим
+
+		xor	ah,ah
+		int	16h		; ждём нажатия любой клавиши
+
+		mov	ax,4C00h
+		int	21h		; выходим из программы
+
+; Вывод чисел EAX и ECX с табличным оформлением
+ShowTwoNumbers	proc
+		push	ax
+		mov	ah,9		; функция вывода сообщения на экран (до '$')
+		lea	dx,TableLeft	; адрес левой части таблицы
+		int	21h		; выводим
+		pop	ax
+
+		push	ecx		; сохраняем ECX
+		call	ShowNumber	; выводим EAX
+
+		mov	ah,9		; функция вывода сообщения на экран (до '$')
+		lea	dx,TableMiddle	; адрес средней части таблицы
+		int	21h		; выводим
+
+		pop	eax		; EAX = сохранённый ECX
+		call	ShowNumber	; выводим EAX
+
+		mov	ah,9		; функция вывода сообщения на экран (до '$')
+		lea	dx,TableRight	; адрес правой части таблицы
+		int	21h		; выводим
+		ret
+ShowTwoNumbers	endp
+
+; Вывод числа EAX на экран (ровно 20 символов)
+ShowNumber	proc
+		mov	cx,20		; CX = кол-во значимых бит
+		shl	eax,32-20	; удаляем из EAX лишние старшие биты
+	@@Next:	mov	dl,'0'		; заносим в DL символ '0'
+		shl	eax,1		; сдвигаем EAX влево на 1 бит, записывая в CF сдвинутый бит
+		adc	dl,0		; добавляем флаг CF к DL
+		push	ax		; сохраняем AX
+		mov	ah,2		; функция вывода символа DL
+		int	21h		; выводим символ
+		pop	ax		; восстанавливаем AX
+		loop	@@Next		; повтоярем цикл CX раз
+		ret
+ShowNumber	endp
+
+end		Start
