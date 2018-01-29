@@ -1,0 +1,111 @@
+.model small
+.486						; поддержка инструкций процессора 486
+.stack 100h					; стек на 256 байт
+
+.data
+
+InitStr		DB	'Initial string:$'
+FirstStr	DB	'First string:$'
+SecondStr	DB	'Second string:$'
+NLine		DB	13,10,'$'		; символы новой строки
+SrcStr		DB	'H3ll0_W0rld!!! kjGKY^767.n8/rf,io3m98-AA-&*860075%&EN !!!G00DBYE'	; исходная строка
+StrSize		=	$-SrcStr		; длина строки (должна быть = 64)
+		DB	'$'			; символ завершения строки (функция DOS ah=9 выводит строки до этого символа)
+BitMask		DQ	5555AAAACCCC3333h	; битовая маска
+DestStr1	DB	StrSize dup (?)		; буфер для новой строки 1
+		DB	?			; буфер для символа завершения строки
+DestStr2	DB	StrSize dup (?)		; буфер для новой строки 2
+		DB	?			; буфер для символа завершения строки
+
+.code
+
+Start:
+
+		mov	ax,@data
+		mov	ds,ax			; DS = сегмент данных
+		mov	es,ax			; ES = сегмент данных
+		cld				; прямой порядок обработки строк
+
+		lea	dx,InitStr		; DX = адрес строки InitStr
+		call	ShowString		; выводим строку
+		lea	dx,SrcStr		; DX = адрес исходной строки
+		call	ShowString		; выводим её на экран
+
+		mov	cx,64			; кол-во бит
+		mov	ebx,dword ptr [BitMask+0]	; загружаем битовую маску в EBX (младшую часть)
+		mov	edx,dword ptr [BitMask+4]	; и EDX (старшую часть)
+	Bits:	shr	edx,1			; сдвигаем битовую маску на 1 бит вправо (старшую часть)
+		rcr	ebx,1			; теперь младшую часть (записав на мето старшего бита сдвинутый младший из EDX), сдвинутый бит во флаге CF
+		push	dx
+		mov	dl,'0'
+		adc	dl,0			; добавляем флаг CF
+		mov	ah,2
+		int	21h			; выводим символ
+		pop	dx
+                loop	Bits			; к следующему биту
+                call	NewLine			; перевод строки
+                call	NewLine			; перевод строки
+
+		; Создание первой строки
+		mov	ebx,dword ptr [BitMask+0]	; загружаем битовую маску в EBX (младшую часть)
+		mov	edx,dword ptr [BitMask+4]	; и EDX (старшую часть)
+
+		lea	si,SrcStr		; SI = адрес исходной строки
+		lea	di,DestStr1		; DI = адрес буфера для новой строки 1
+		mov	cx,StrSize		; CX = длина строки
+
+	Next:	lodsb				; читаем символ из исходной строки (из DS:[SI]) в AL и увеличиваем SI на 1
+		shr	edx,1			; сдвигаем битовую маску на 1 бит вправо (старшую часть)
+		rcr	ebx,1			; теперь младшую часть (записав на мето старшего бита сдвинутый младший из EDX)
+		jnc	Skip			; если младший сдвинутый бит маски = 0 (CF=0), пропускаем
+		cmp	al,'0'
+		jb	Skip			; если символ < '0' (не цифра), пропускаем
+		cmp	al,'9'
+		ja	Skip			; если символ > '9' (не цифра), пропускаем
+		stosb				; иначе записываем символ из AL в новую строку 1 (в ES:[DI]) и увеличиваем DI на 1
+	Skip:	loop	Next			; переходим к следующему символу (повторяем CX раз)
+		mov	al,'$'			; символ завершения строки
+		stosb				; записываем его тоже
+
+		lea	dx,FirstStr		; DX = адрес строки FirstStr
+		call	ShowString		; выводим строку
+		lea	dx,DestStr1		; DX = адрес новой строки 1
+		call	ShowString		; выводим её на экран
+                call	NewLine			; перевод строки
+
+		; Создание второй строки
+		lea	si,SrcStr		; SI = адрес исходной строки
+		lea	di,DestStr2+StrSize	; DI = адрес конца буфера для новой строки 2 (т.к. мы формируем строку в обратном порядке)
+		mov	cx,StrSize		; CX = длина строки
+		mov	byte ptr [di],'$'	; записываем в конец завершающий символ (для вывода)
+
+	Load:	lodsb				; читаем символ из исходной строки (из DS:[SI]) в AL и увеличиваем SI на 1
+		mov	ah,[si]			; читаем следующий символ в AH
+		cmp	ax,'AA'			; эти 2 символа = 'AA' ???
+		je	Finish			; да, завершаем обработку
+		dec	di			; иначе уменьшаем DI
+		mov	[di],al			; и записываем символ в новую строку 2
+		loop	Load			; переходим к следующему символу (повторяем CX раз)
+	Finish:
+		lea	dx,SecondStr		; DX = адрес строки SecondStr
+		call	ShowString		; выводим строку
+		mov	dx,di			; адрес новой строки 2
+		call	ShowString		; выводим её на экран
+
+		mov	ax,4C00h
+		int	21h			; выходим из программы
+
+; Процедура вывода строки по адресу DX и перевода строки
+ShowString	proc
+		mov	ah,9			; функция DOS вывода строки (до символа '$')
+		int	21h			; выводим строку
+; Процедура перевода строки (является частью процедуры ShowString)
+NewLine		proc
+		mov	ah,9			; функция DOS вывода строки (до символа '$')
+		lea	dx,NLine		; адрес символов перевода строки
+		int	21h			; выводим
+		ret
+NewLine		endp
+ShowString	endp
+
+end		Start				; Start - точка старта
