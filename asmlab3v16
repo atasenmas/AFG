@@ -1,0 +1,82 @@
+.MODEL Small,Pascal
+.486
+.STACK 100h
+
+HexToDWord	PROTO	:DWORD, :DWORD
+
+.DATA
+
+Welcome		DB	'Please enter a signed hex number: $'
+OK		DB	13,10,'Decimal = $'
+Wrong		DB	13,10,'Number is wrong!',13,10,'$'
+Buffer		DB	21,?
+String		DB	21 dup (?)
+Number		DD	?
+
+.CODE
+
+Start:
+
+		mov	ax,@DATA
+		mov	ds,ax			; DS = сегмент данных
+
+		mov	ah,9
+		mov	dx,offset Welcome
+		int	21h			; вывод приглашения на ввод числа
+
+		mov	ah,0Ah
+		mov	dx,offset Buffer
+		int	21h			; ввод числа
+
+		push	offset String		; заносим в стек адрес строки
+		push	offset Number		; заносим в стек адрес буфера для числа
+		call	HexToDWord		; вызываем процедуру преобразования
+		test	ax,ax			; проверяем результат
+		jnz	@@wrong			; прыгаем, если AX <> 0 (т.е. при ошибке)
+
+		mov	ah,9
+		mov	dx,offset OK		; иначе всё хорошо
+		int	21h			; выводим результат
+
+		mov	eax,Number
+		call	OutInt
+		jmp	@@exit
+	@@wrong:
+		mov	ah,9
+		mov	dx,offset Wrong		; сообщение об ошибке
+		int	21h			; выводим результат
+	@@exit:
+		mov	ax,4C00h
+		int	21h			; выход из программы
+
+;-- Вывод целого знакового десятичного числа (EAX) на экран -----------------------------------------
+; Меняет EAX, EBX, CX, EDX
+OutInt		proc
+		test	eax,eax		; проверяем число
+		jns	nosign		; переходим, если число положительное
+		push	ax		; иначе сохраняем число
+		mov	ah,2		; номер функции DOS вывода символа на экран
+		mov	dl,'-'		; символ
+		int	21h		; выводим символ
+		pop	ax		; восстанавливаем число
+		neg	eax		; и меняем знак
+	nosign:
+		xor	cx,cx		; кол-во цифр (пока 0)
+		mov	ebx,10		; система счисления (десятичная)
+	nextdigit:
+		xor	edx,edx		; EDX = 0 (нужно для деления)
+		div	ebx		; EAX = EDX:EAX/систему_счисления, EDX = остаток
+		push	dx		; сохраняем цифру в стеке
+		inc	cx		; увеличиваем кол-во цифр
+		test	eax,eax		; проверяем AX (число)
+		jnz	nextdigit	; переход, если частное ещё не равно 0
+		mov	ah,2		; номер функции DOS вывода символа на экран
+	outdigit:
+		pop	dx		; извлекаем цифру из стека
+		add	dl,'0'		; преобразуем её в символ
+		int	21h		; вывод цифры
+		loop	outdigit	; повторяем цикл вывода символов
+		ret			; выходим из процедуры
+OutInt		endp
+
+END		Start
